@@ -1,0 +1,81 @@
+﻿@page "/mealplan"
+@using Blazored.SessionStorage
+@inject ISessionStorageService sessionStorage
+@inject NavigationManager Navigation
+
+<div class="bg-gray-300 min-h-screen flex flex-col items-center justify-center p-4 gap-6 py-10">
+    <div class="w-full md:w-2/3 xl:w-1/2 flex flex-col gap-4 box-">
+        
+        <div class="bg-white bg-opacity-60 p-4 rounded-3xl border-2 border-white shadow-2xl flex flex-col items-center relative">
+            @if (string.IsNullOrEmpty(response))
+            {
+                <p>Loading...</p>
+            }
+            else
+            {
+               
+
+                <div class="w-full">
+                     <div class="flex items-center justify-center w-full mb-4 relative">
+                    <div class="btn btn-active btn-neutral btn-sm  lg:btn-md mt-4 absolute left-0" @onclick="GoBack">
+                        <i class="fas fa-arrow-left"></i>
+                    </div>
+                    <button class="btn btn-active btn-neutral btn-sm lg:btn-md mt-4 text-white  text-lg lg:text-3xl mx-auto ">
+                        Your Weekly Meal Plan
+                    </button>
+                </div>
+                    @foreach (var day in formattedResponse)
+                    {
+                      <div class="mb-4  justify-start w-full">
+                            <p class="font-bold text-center">@day.Key</p>
+                            <div class=" items-center justify-center">
+                                <p><span class="font-semibold">Breakfast:</span> @day.Value.Breakfast</p>
+                                <p><span class="font-semibold">Lunch:</span> @day.Value.Lunch</p>
+                                <p><span class="font-semibold">Dinner:</span> @day.Value.Dinner</p>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private string response;
+    private Dictionary<string, (string Breakfast, string Lunch, string Dinner)> formattedResponse;
+
+    protected override async Task OnInitializedAsync()
+    {
+        response = await sessionStorage.GetItemAsync<string>("mealPlanResponse");
+        if (!string.IsNullOrEmpty(response))
+        {
+            FormatResponse();
+        }
+    }
+
+    private void FormatResponse()
+    {
+        formattedResponse = new Dictionary<string, (string Breakfast, string Lunch, string Dinner)>();
+        
+        var days = response.Split(new[] { "Day" }, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var day in days)
+        {
+            var parts = day.Trim().Split(new[] { "Breakfast:", "Lunch:", "Dinner:" }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 4)
+            {
+                var dayNumber = parts[0].Trim().TrimEnd(':'); // Trim spaces and remove any trailing colons
+                var dayKey = "DAY " + dayNumber; // Add a space between "DAY" and the day number
+                var breakfast = parts[1].Trim();
+                var lunch = parts[2].Trim();
+                var dinner = parts[3].Trim();
+                formattedResponse[dayKey] = (breakfast, lunch, dinner);
+            }
+        }
+    }
+
+    private void GoBack()
+    {
+        Navigation.NavigateTo("/chat");
+    }
+}

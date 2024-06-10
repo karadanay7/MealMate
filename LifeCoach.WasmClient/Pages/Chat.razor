@@ -1,0 +1,217 @@
+@page "/chat"
+@using LifeCoach.Domain
+@using LifeCoach.Domain.Entities
+@using LifeCoach.Domain.Enums
+@using OpenAI.Interfaces
+@using OpenAI.ObjectModels
+@using OpenAI.ObjectModels.RequestModels
+@using System.Text
+@using Blazored.SessionStorage
+@inject ISessionStorageService sessionStorage
+@using Microsoft.AspNetCore.Components
+@inject NavigationManager Navigation
+@inject IOpenAIService OpenAIService
+
+@if (isLoading)
+{
+   <LifeCoach.WasmClient.Components.Loading/>
+}
+else {
+    <div class="bg-gray-300 min-h-screen flex flex-col items-center justify-center p-4 gap-6 text-gray-700 overflow-scroll ">
+          <h2 class=" text-2xl lg:text-4xl font-semibold text-center text-gray-700 mb-4">Generate Your Meal Plan</h2>
+        <div class="w-[300px] md:w-[450px] flex flex-col gap-4  overflow-hidden p-2">
+          
+            
+            <div class="mb-3">
+                <label for="weightInput" class="text-lg">Weight (kg):</label>
+                <input type="range" id="weightInput" min="0" max="150" value="@weight" class="range range-sm range-neutral input input-bordered w-full" @oninput="UpdateWeight" />
+                <span id="weightValue" class="ml-2">@weight</span>
+            </div>
+            
+            <div class="mb-3">
+                <label for="heightInput" class="text-lg">Height (cm):</label>
+                <input type="range" id="heightInput" min="30" max="250" value="@height" class="range range-sm range-neutral input input-bordered w-full" @oninput="UpdateHeight" />
+                <span id="heightValue" class="ml-2">@height</span>
+            </div>
+            
+            <div class="mb-3">
+                <label for="ageInput" class="text-lg">Age:</label>
+                <input type="range" id="ageInput" min="10" max="120" value="@age" class="range range-sm range-neutral input input-bordered w-full" @oninput="UpdateAge" />
+                <span id="ageValue" class="ml-2">@age</span>
+            </div>
+            
+            <div class="mb-3">
+                <select @bind="@UserInput.Gender" id="genderSelect" class="select select-bordered w-full text-black" required>
+                    <option disabled selected>Select Gender</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                </select>
+            </div>
+            
+            <div class="mb-3">
+                <select @bind="@UserInput.Goal" id="goalSelect" class="select select-bordered w-full text-black" required>
+                    <option disabled selected>Select Goal</option>
+                    <option value="LoseWeight">Lose Weight</option>
+                    <option value="GainMuscle">Gain Weight</option>
+                </select>
+            </div>
+            
+            <div class="mb-3">
+                <select @bind="@UserInput.ActivityLevel" id="activitySelect" class="select select-bordered w-full text-black" required>
+                    <option disabled selected>Activity Level</option>
+                    <option value="Sedentary">Sedentary</option>
+                    <option value="LightlyActive">Lightly Active</option>
+                    <option value="ModeratelyActive">Moderately Active</option>
+                    <option value="VeryActive">Very Active</option>
+                    <option value="SuperActive">Super Active</option>
+                </select>
+            </div>
+            
+            <div class="mb-3">
+                <select @bind="@UserInput.MealPreference" id="mealPreferenceSelect" class="select select-bordered w-full text-black" required>
+                    <option disabled selected>Meal Preference</option>
+                    <option value="Low Carb">Low Carb</option>
+                    <option value="HighProtein">High Protein</option>
+                    <option value="Balanced">Balanced</option>
+                    <option value="Vegan">Vegan</option>
+                    <option value="Vegetarian">Vegetarian</option>
+                    <option value="Keto">Keto</option>
+                    <option value="Pescatarian">Pescatarian</option>
+                    <option value="Paleo">Paleo</option>
+                    <option value="Mediterranean">Mediterranean</option>
+                </select>
+            </div>
+            
+            <div class="mb-3">
+                <input type="text" @bind="@UserInput.Allergies" id="allergyInput" placeholder="Please specify any allergies or foods you dislike." class="input input-bordered w-full text-black" />
+            </div>
+            
+            <div class="mb-3">
+                <input type="text" @bind="@UserInput.Disorders" id="disorderInput" placeholder="Any medical conditions" class="input input-bordered w-full text-black" />
+            </div>
+            
+            <div>
+                <button class="btn btn-active btn-neutral w-full" type="button" disabled="@isLoading" @onclick="GenerateMealPlan">Generate Meal Plan</button>
+            </div>
+        </div>
+    </div>
+}
+@code {
+   
+    public List<GptChatMessage> GptMessages { get; set; } = new();
+    private bool isLoading = false;
+       public UserInputModel UserInput { get; set; } = new UserInputModel
+    {
+        Gender = "Male", // Default value
+        MealPreference = "Balanced", // Default value
+        ActivityLevel = "ModeratelyActive", // Default value
+        Goal = "LoseWeight", // Default value
+        Allergies = "", // Default value
+        Disorders = "" // Default value
+    };
+    public string Prompt { get; set; }
+    int weight = 70;
+    int height = 170;
+    int age = 30;
+    
+
+    void UpdateWeight(ChangeEventArgs e)
+    {
+        weight = Convert.ToInt32(e.Value);
+        UserInput.Weight = weight;
+    }
+
+    void UpdateHeight(ChangeEventArgs e)
+    {
+        height = Convert.ToInt32(e.Value);
+        UserInput.Height = height;
+    }
+
+    void UpdateAge(ChangeEventArgs e)
+    {
+        age = Convert.ToInt32(e.Value);
+        UserInput.Age = age;
+    }
+
+    void UpdateMealPreference(ChangeEventArgs e)
+    {
+        UserInput.MealPreference = e.Value.ToString();
+    }
+
+    private async Task SendMessage()
+    {
+        if (string.IsNullOrWhiteSpace(Prompt))
+            return;
+
+        isLoading = true;
+
+        GptMessages.Add(new GptChatMessage(Prompt, GptChatMessageType.User));
+     var chatMessages = MapGptMessagesToChatMessages(GptMessages);
+        // Send user prompt to AI service
+        var completionResult = await OpenAIService.ChatCompletion.CreateCompletion(new ChatCompletionCreateRequest
+        {
+            Messages = chatMessages,
+            Model = Models.Gpt_3_5_Turbo,
+            MaxTokens = 4000
+        });
+
+         if (completionResult.Successful)
+        {
+            var receivedMessage = completionResult.Choices.First().Message.Content;
+            GptMessages.Add(new GptChatMessage(receivedMessage, GptChatMessageType.AI));
+
+            // Store the response in session storage
+            await sessionStorage.SetItemAsync("mealPlanResponse", receivedMessage);
+
+            // Redirect to result page
+            Navigation.NavigateTo("/mealplan");
+        }
+
+
+        isLoading = false;
+        Prompt = string.Empty;
+    }
+
+    private async Task GenerateMealPlan()
+    {
+        // Update UserInputModel with the latest weight, height, age, and meal preference
+        UserInput.Weight = weight;
+        UserInput.Height = height;
+        UserInput.Age = age;
+
+        // Generate the meal plan prompt string based on user input
+    Prompt = $"You are a doctor, dietitian, and life coach with 50 years of experience.When you include greek yogurt in mealplan write Turkish Yogurt instead of Greek yogurt beacuse yogurt is Turkish. only use turkish yogurt when yogurt is needed. Create a 7-day meal plan for a {UserInput.Gender} with the goal to {UserInput.Goal} based on the following details: Weight - {UserInput.Weight} kg, Height - {UserInput.Height} cm, Age - {UserInput.Age}, Meal Preference - {UserInput.MealPreference}, Activity Level - {UserInput.ActivityLevel}, Allergies - {UserInput.Allergies}. Disorders - {UserInput.Disorders} At the begining write Your daily calory intake kcal is to achive your goal . Provide  3 meals (Breakfast, Lunch, Dinner) depending on daily calories to achive the goal for 7 days. Write the response as day 1: breakfast : lunch: dinner: etc. Also you should add grams of food for each meal. For example 100 gram chicken breast with 100 gram rice.";
+       
+        // Log the prompt string to the console
+        Console.WriteLine("Latest Prompt: " + Prompt);
+
+        // Send the generated meal plan as the prompt to the AI service
+        await SendMessage();
+      
+    }
+      private List<ChatMessage> MapGptMessagesToChatMessages(List<GptChatMessage> gptMessages)
+    {
+        if (gptMessages is null || !gptMessages.Any())
+            return new List<ChatMessage>();
+
+        List<ChatMessage> chatMessages = new();
+
+        foreach (var gptMessage in gptMessages)
+        {
+            ChatMessage chatMessage = null;
+
+            if (gptMessage.MessageType == GptChatMessageType.System)
+                chatMessage = ChatMessage.FromSystem(gptMessage.Message);
+
+            else if (gptMessage.MessageType == GptChatMessageType.AI)
+                chatMessage = ChatMessage.FromAssistant(gptMessage.Message);
+
+            else
+                chatMessage = ChatMessage.FromUser(gptMessage.Message);
+
+            chatMessages.Add(chatMessage);
+        }
+
+        return chatMessages;
+    }
+}

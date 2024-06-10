@@ -1,0 +1,7 @@
+@LifeCoach.WebApi_HostAddress = http://localhost:5240
+
+GET {{LifeCoach.WebApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
+
